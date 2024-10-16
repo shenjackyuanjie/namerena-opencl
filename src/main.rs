@@ -166,12 +166,16 @@ fn main() -> anyhow::Result<()> {
     // 阻塞写
     let _team_write_event =
         unsafe { queue.enqueue_write_buffer(&mut team, CL_BLOCKING, 0, &team_data_vec, &[]) }?;
+    _team_write_event.wait()?;
     let _name_write_event =
         unsafe { queue.enqueue_write_buffer(&mut name, CL_BLOCKING, 0, &name_data_vec, &[]) }?;
+    _name_write_event.wait()?;
     let _t_len_write_event =
         unsafe { queue.enqueue_write_buffer(&mut t_len, CL_BLOCKING, 0, &t_len_vec, &[]) }?;
+    _t_len_write_event.wait()?;
     let _n_len_write_event =
         unsafe { queue.enqueue_write_buffer(&mut n_len, CL_BLOCKING, 0, &n_len_vec, &[]) }?;
+    _n_len_write_event.wait()?;
 
     println!("开始执行kernel");
 
