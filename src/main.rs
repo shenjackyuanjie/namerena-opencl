@@ -1,6 +1,6 @@
 use opencl3::command_queue::{CommandQueue, CL_QUEUE_PROFILING_ENABLE};
 use opencl3::context::Context;
-use opencl3::device::{get_all_devices, get_device_info, Device, CL_DEVICE_MAX_WORK_GROUP_SIZE_AMD, CL_DEVICE_TYPE_GPU};
+use opencl3::device::{get_all_devices, get_device_info, Device, CL_DEVICE_MAX_WORK_GROUP_SIZE, CL_DEVICE_MAX_WORK_GROUP_SIZE_AMD, CL_DEVICE_TYPE_GPU};
 use opencl3::kernel::{ExecuteKernel, Kernel};
 use opencl3::memory::{Buffer, CL_MAP_WRITE, CL_MEM_READ_ONLY};
 use opencl3::program::Program;
@@ -19,13 +19,23 @@ fn main() -> anyhow::Result<()> {
     let device_id = *get_all_devices(CL_DEVICE_TYPE_GPU)?
         .first()
         .expect("no device found in platform");
-    let size = match get_device_info(device_id, CL_DEVICE_MAX_WORK_GROUP_SIZE_AMD) {
-        Ok(size) => {
-            size.to_size()
-        },
-        Err(err) => {
-            println!("get_device_info failed: {}", err);
-            panic!();
+    let size = {
+        match get_device_info(device_id, CL_DEVICE_MAX_WORK_GROUP_SIZE_AMD) {
+            Ok(size) => {
+                size.to_size()
+            },
+            Err(err) => {
+                println!("警告: get_device_info failed: {}\n也许是你没有一张AMD显卡,让我们试试非AMD", err);
+                match get_device_info(device_id, CL_DEVICE_MAX_WORK_GROUP_SIZE) {
+                    Ok(size) => {
+                        size.to_size()
+                    },
+                    Err(err) => {
+                        println!("错误: get_device_info failed: {}\n", err);
+                        panic!();
+                    }
+                }
+            }
         }
     };
     let device = Device::new(device_id);
