@@ -196,6 +196,8 @@ fn main() -> anyhow::Result<()> {
             .set_global_work_size(worker_count as usize)
             .enqueue_nd_range(&queue)?
     };
+
+    println!("等待kernel执行完成");
     let start_tick = std::time::Instant::now();
     kernel_event.wait()?;
     let end_tick = std::time::Instant::now();
