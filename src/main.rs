@@ -54,8 +54,13 @@ fn main() -> anyhow::Result<()> {
     // Create a Context on an OpenCL device
     let context = Context::from_device(&device).expect("Context::from_device failed");
 
-    let property =
-        CL_QUEUE_PROFILING_ENABLE | CL_QUEUE_OUT_OF_ORDER_EXEC_MODE_ENABLE | CL_QUEUE_ON_DEVICE;
+    let mut property =
+        CL_QUEUE_PROFILING_ENABLE | CL_QUEUE_OUT_OF_ORDER_EXEC_MODE_ENABLE;
+    // 如果命令行参数包含 -d, 则 | 一个 CL_QUEUE_ON_DEVICE
+    let args = std::env::args().collect::<Vec<String>>();
+    if args.contains(&"-d".to_string()) {
+        property |= CL_QUEUE_ON_DEVICE;
+    }
     let queue = match CommandQueue::create_default_with_properties(
         &context, property, 10, // 写死试试, 看起来没问题
     ) {
