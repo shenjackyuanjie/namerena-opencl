@@ -5,4 +5,5 @@ edition = "2021"
 
 [dependencies]
 anyhow = { version = "1.0", features = ["backtrace"] }
-opencl3 = { version = "0.9.5", features = ["serde"] }
+opencl3 = { version = "0.9.5", features = ["serde", 
+"cl_khr_create_command_queue"] }

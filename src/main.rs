@@ -48,14 +48,14 @@ fn main() -> anyhow::Result<()> {
     let context = Context::from_device(&device).expect("Context::from_device failed");
 
     let property = CL_QUEUE_PROFILING_ENABLE | CL_QUEUE_OUT_OF_ORDER_EXEC_MODE_ENABLE;
-    let queue = match CommandQueue::create_default_with_properties(
+    let queue = match CommandQueue::create_with_properties_khr(
         &context,
-        0,
-        10, // 写死试试, 看起来没问题
+        device_id,
+        &[], // 写死试试, 看起来没问题
     ) {
         Ok(q) => q,
         Err(err) => {
-            println!("创建命令队列失败: {}, 属性: {}", err, 0);
+            println!("创建命令队列失败: {}", err);
             panic!();
         }
     };
