@@ -1,6 +1,12 @@
-use opencl3::command_queue::{CommandQueue, CL_QUEUE_ON_DEVICE, CL_QUEUE_OUT_OF_ORDER_EXEC_MODE_ENABLE, CL_QUEUE_PROFILING_ENABLE};
+use opencl3::command_queue::{
+    CommandQueue, CL_QUEUE_ON_DEVICE, CL_QUEUE_OUT_OF_ORDER_EXEC_MODE_ENABLE,
+    CL_QUEUE_PROFILING_ENABLE,
+};
 use opencl3::context::Context;
-use opencl3::device::{get_all_devices, get_device_info, Device, CL_DEVICE_MAX_WORK_GROUP_SIZE, CL_DEVICE_MAX_WORK_GROUP_SIZE_AMD, CL_DEVICE_TYPE_GPU};
+use opencl3::device::{
+    get_all_devices, get_device_info, Device, CL_DEVICE_MAX_WORK_GROUP_SIZE,
+    CL_DEVICE_MAX_WORK_GROUP_SIZE_AMD, CL_DEVICE_TYPE_GPU,
+};
 use opencl3::kernel::{ExecuteKernel, Kernel};
 use opencl3::memory::{Buffer, CL_MAP_WRITE, CL_MEM_READ_ONLY};
 use opencl3::program::Program;
@@ -21,16 +27,17 @@ fn main() -> anyhow::Result<()> {
         .expect("no device found in platform");
     let size = {
         match get_device_info(device_id, CL_DEVICE_MAX_WORK_GROUP_SIZE_AMD) {
-            Ok(size) => {
-                size.to_size()
-            },
+            Ok(size) => size.to_size(),
             Err(err) => {
-                println!("警告: get_device_info failed: {}\n也许是你没有一张AMD显卡,让我们试试非AMD", err);
+                println!(
+                    "警告: get_device_info failed: {}\n也许是你没有一张AMD显卡,让我们试试非AMD",
+                    err
+                );
                 match get_device_info(device_id, CL_DEVICE_MAX_WORK_GROUP_SIZE) {
                     Ok(size) => {
                         println!("非 amd size 获取成功");
                         size.to_size()
-                    },
+                    }
                     Err(err) => {
                         println!("错误: get_device_info failed: {}\n", err);
                         panic!();
@@ -47,11 +54,10 @@ fn main() -> anyhow::Result<()> {
     // Create a Context on an OpenCL device
     let context = Context::from_device(&device).expect("Context::from_device failed");
 
-    let property = CL_QUEUE_PROFILING_ENABLE | CL_QUEUE_OUT_OF_ORDER_EXEC_MODE_ENABLE | CL_QUEUE_ON_DEVICE;
+    let property =
+        CL_QUEUE_PROFILING_ENABLE | CL_QUEUE_OUT_OF_ORDER_EXEC_MODE_ENABLE | CL_QUEUE_ON_DEVICE;
     let queue = match CommandQueue::create_default_with_properties(
-        &context,
-        property,
-        10, // 写死试试, 看起来没问题
+        &context, property, 10, // 写死试试, 看起来没问题
     ) {
         Ok(q) => q,
         Err(err) => {
@@ -60,9 +66,14 @@ fn main() -> anyhow::Result<()> {
         }
     };
 
+    println!("队列创建完成");
+
     // Build the OpenCL program source and create the kernel.
     let program = match Program::create_and_build_from_source(&context, PROGRAM_SOURCE, "") {
-        Ok(p) => p,
+        Ok(p) => {
+            println!("程序构建成功");
+            p
+        }
         Err(err) => {
             println!(
                 "OpenCL Program::create_and_build_from_source failed: {}",
@@ -75,10 +86,22 @@ fn main() -> anyhow::Result<()> {
 
     let team_raw_vec = vec!["x"; worker_count as usize];
     let name_raw_vec = vec!["x"; worker_count as usize];
-    let team_bytes_vec = team_raw_vec.iter().map(|s| s.as_bytes()).collect::<Vec<&[u8]>>();
-    let name_bytes_vec = name_raw_vec.iter().map(|s| s.as_bytes()).collect::<Vec<&[u8]>>();
-    let t_len_vec = team_bytes_vec.iter().map(|s| s.len() as cl_int + 1).collect::<Vec<i32>>();
-    let n_len_vec = name_bytes_vec.iter().map(|s| s.len() as cl_int).collect::<Vec<i32>>();
+    let team_bytes_vec = team_raw_vec
+        .iter()
+        .map(|s| s.as_bytes())
+        .collect::<Vec<&[u8]>>();
+    let name_bytes_vec = name_raw_vec
+        .iter()
+        .map(|s| s.as_bytes())
+        .collect::<Vec<&[u8]>>();
+    let t_len_vec = team_bytes_vec
+        .iter()
+        .map(|s| s.len() as cl_int + 1)
+        .collect::<Vec<i32>>();
+    let n_len_vec = name_bytes_vec
+        .iter()
+        .map(|s| s.len() as cl_int)
+        .collect::<Vec<i32>>();
 
     let work_count = team_bytes_vec.len();
 
@@ -166,7 +189,10 @@ fn main() -> anyhow::Result<()> {
     let time = std::time::Duration::from_nanos(duration as u64);
     println!("kernel execution duration: {:?}", time);
     let pre_sec = 1_000_000_000 as f32 / duration as f32;
-    println!("kernel execution speed (pre/sec): {:?}", pre_sec * worker_count as f32);
+    println!(
+        "kernel execution speed (pre/sec): {:?}",
+        pre_sec * worker_count as f32
+    );
     // println!("output: {:?} {}", output, output.len());
 
     if !output.is_fine_grained() {
