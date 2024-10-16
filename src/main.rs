@@ -55,7 +55,7 @@ fn main() -> anyhow::Result<()> {
     ) {
         Ok(q) => q,
         Err(err) => {
-            println!("创建命令队列失败: {}, 属性: {}", err, property);
+            println!("创建命令队列失败: {}, 属性: {}", err, 0);
             panic!();
         }
     };
