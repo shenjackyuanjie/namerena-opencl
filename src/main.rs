@@ -48,7 +48,7 @@ fn main() -> anyhow::Result<()> {
     };
     let device = Device::new(device_id);
 
-    let worker_count: cl_int = size as cl_int;
+    let worker_count: cl_int = 100 as cl_int;
     println!("设备最大队列长度: {} real count: {}", size, worker_count);
 
     // Create a Context on an OpenCL device
