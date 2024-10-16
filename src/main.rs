@@ -1,4 +1,4 @@
-use opencl3::command_queue::{CommandQueue, CL_QUEUE_PROFILING_ENABLE, CL_QUEUE_OUT_OF_ORDER_EXEC_MODE_ENABLE};
+use opencl3::command_queue::{CommandQueue, CL_QUEUE_ON_DEVICE, CL_QUEUE_OUT_OF_ORDER_EXEC_MODE_ENABLE, CL_QUEUE_PROFILING_ENABLE};
 use opencl3::context::Context;
 use opencl3::device::{get_all_devices, get_device_info, Device, CL_DEVICE_MAX_WORK_GROUP_SIZE, CL_DEVICE_MAX_WORK_GROUP_SIZE_AMD, CL_DEVICE_TYPE_GPU};
 use opencl3::kernel::{ExecuteKernel, Kernel};
@@ -47,15 +47,15 @@ fn main() -> anyhow::Result<()> {
     // Create a Context on an OpenCL device
     let context = Context::from_device(&device).expect("Context::from_device failed");
 
-    let property = CL_QUEUE_PROFILING_ENABLE | CL_QUEUE_OUT_OF_ORDER_EXEC_MODE_ENABLE;
+    let property = CL_QUEUE_PROFILING_ENABLE | CL_QUEUE_OUT_OF_ORDER_EXEC_MODE_ENABLE | CL_QUEUE_ON_DEVICE;
     let queue = match CommandQueue::create_default_with_properties(
         &context,
-        0,
+        property,
         10, // 写死试试, 看起来没问题
     ) {
         Ok(q) => q,
         Err(err) => {
-            println!("创建命令队列失败: {}, 属性: {}", err, 0);
+            println!("创建命令队列失败: {}, 属性: {}", err, property);
             panic!();
         }
     };
