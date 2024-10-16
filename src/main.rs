@@ -28,6 +28,7 @@ fn main() -> anyhow::Result<()> {
                 println!("警告: get_device_info failed: {}\n也许是你没有一张AMD显卡,让我们试试非AMD", err);
                 match get_device_info(device_id, CL_DEVICE_MAX_WORK_GROUP_SIZE) {
                     Ok(size) => {
+                        println!("非 amd size 获取成功");
                         size.to_size()
                     },
                     Err(err) => {
@@ -46,12 +47,17 @@ fn main() -> anyhow::Result<()> {
     // Create a Context on an OpenCL device
     let context = Context::from_device(&device).expect("Context::from_device failed");
 
-    let queue = CommandQueue::create_default_with_properties(
+    let queue = match CommandQueue::create_default_with_properties(
         &context,
         CL_QUEUE_PROFILING_ENABLE,
-        worker_count as u32,
-    )
-    .expect("create_command_queue_with_properties failed");
+        10, // 写死试试, 看起来没问题
+    ) {
+        Ok(q) => q,
+        Err(err) => {
+            println!("创建命令队列失败: {}", err);
+            panic!();
+        }
+    };
 
     // Build the OpenCL program source and create the kernel.
     let program = match Program::create_and_build_from_source(&context, PROGRAM_SOURCE, "") {
