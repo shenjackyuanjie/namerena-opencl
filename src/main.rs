@@ -82,7 +82,16 @@ fn main() -> anyhow::Result<()> {
             panic!();
         }
     };
-    let kernel = Kernel::create(&program, KERNEL_NAME).expect("Kernel::create failed");
+    let kernel = match Kernel::create(&program, KERNEL_NAME) {
+        Ok(k) => {
+            println!("内核创建成功");
+            k
+        }
+        Err(err) => {
+            println!("OpenCL Kernel::create failed: {}", err);
+            panic!();
+        }
+    };
 
     let team_raw_vec = vec!["x"; worker_count as usize];
     let name_raw_vec = vec!["x"; worker_count as usize];
@@ -104,6 +113,8 @@ fn main() -> anyhow::Result<()> {
         .collect::<Vec<i32>>();
 
     let work_count = team_bytes_vec.len();
+
+    println!("开始准备buffer");
 
     // Create OpenCL device buffers
     let mut team = unsafe {
@@ -150,6 +161,8 @@ fn main() -> anyhow::Result<()> {
         vec
     };
 
+    println!("开始写入buffer");
+
     // 阻塞写
     let _team_write_event =
         unsafe { queue.enqueue_write_buffer(&mut team, CL_BLOCKING, 0, &team_data_vec, &[]) }?;
@@ -159,6 +172,8 @@ fn main() -> anyhow::Result<()> {
         unsafe { queue.enqueue_write_buffer(&mut t_len, CL_BLOCKING, 0, &t_len_vec, &[]) }?;
     let _n_len_write_event =
         unsafe { queue.enqueue_write_buffer(&mut n_len, CL_BLOCKING, 0, &n_len_vec, &[]) }?;
+
+    println!("开始执行kernel");
 
     // println!("output: {:?} {}", output, output.len());
     let kernel_event = unsafe {
