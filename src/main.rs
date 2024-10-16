@@ -50,7 +50,7 @@ fn main() -> anyhow::Result<()> {
     let property = CL_QUEUE_PROFILING_ENABLE | CL_QUEUE_OUT_OF_ORDER_EXEC_MODE_ENABLE;
     let queue = match CommandQueue::create_default_with_properties(
         &context,
-        property,
+        0,
         10, // 写死试试, 看起来没问题
     ) {
         Ok(q) => q,
@@ -149,8 +149,12 @@ fn main() -> anyhow::Result<()> {
             .set_global_work_size(worker_count as usize)
             .enqueue_nd_range(&queue)?
     };
+    let start_tick = std::time::Instant::now();
     kernel_event.wait()?;
+    let end_tick = std::time::Instant::now();
     queue.finish()?;
+
+    println!("外置计时: {:?}", end_tick - start_tick);
 
     if !output.is_fine_grained() {
         unsafe { queue.enqueue_svm_map(CL_BLOCKING, CL_MAP_WRITE, &mut output, &[]) }?;
