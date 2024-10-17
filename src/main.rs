@@ -132,9 +132,6 @@ fn main() -> anyhow::Result<()> {
             ptr::null_mut(),
         )?
     };
-    // let mut t_len = unsafe {
-    //     Buffer::<cl_int>::create(&context, CL_MEM_READ_ONLY, work_count, ptr::null_mut())?
-    // };
     let mut n_len = unsafe {
         Buffer::<cl_int>::create(&context, CL_MEM_READ_ONLY, work_count, ptr::null_mut())?
     };
@@ -160,9 +157,6 @@ fn main() -> anyhow::Result<()> {
     let _name_write_event =
         unsafe { queue.enqueue_write_buffer(&mut name, CL_BLOCKING, 0, &name_data_vec, &[]) }?;
     _name_write_event.wait()?;
-    // let _t_len_write_event =
-    //     unsafe { queue.enqueue_write_buffer(&mut t_len, CL_BLOCKING, 0, &t_len_vec, &[]) }?;
-    // _t_len_write_event.wait()?;
     let _n_len_write_event =
         unsafe { queue.enqueue_write_buffer(&mut n_len, CL_BLOCKING, 0, &n_len_vec, &[]) }?;
     _n_len_write_event.wait()?;
