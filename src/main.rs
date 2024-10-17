@@ -11,7 +11,7 @@ use opencl3::kernel::{ExecuteKernel, Kernel};
 use opencl3::memory::{Buffer, CL_MAP_WRITE, CL_MEM_READ_ONLY};
 use opencl3::program::Program;
 use opencl3::svm::SvmVec;
-use opencl3::types::{cl_int, cl_uchar, CL_BLOCKING};
+use opencl3::types::{cl_int, cl_uchar, CL_BLOCKING, CL_NON_BLOCKING};
 use std::ptr;
 
 const PROGRAM_SOURCE: &str = include_str!("program.cl");
@@ -62,7 +62,7 @@ fn main() -> anyhow::Result<()> {
         property |= CL_QUEUE_ON_DEVICE;
     }
     let queue = match CommandQueue::create_default_with_properties(
-        &context, property, 0
+        &context, property, 2
     ) {
         Ok(q) => q,
         Err(err) => {
@@ -152,13 +152,13 @@ fn main() -> anyhow::Result<()> {
 
     // 阻塞写
     let _team_write_event =
-        unsafe { queue.enqueue_write_buffer(&mut team, CL_BLOCKING, 0, team_bytes, &[]) }?;
+        unsafe { queue.enqueue_write_buffer(&mut team, CL_NON_BLOCKING, 0, team_bytes, &[]) }?;
     _team_write_event.wait()?;
     let _name_write_event =
-        unsafe { queue.enqueue_write_buffer(&mut name, CL_BLOCKING, 0, &name_data_vec, &[]) }?;
+        unsafe { queue.enqueue_write_buffer(&mut name, CL_NON_BLOCKING, 0, &name_data_vec, &[]) }?;
     _name_write_event.wait()?;
     let _n_len_write_event =
-        unsafe { queue.enqueue_write_buffer(&mut n_len, CL_BLOCKING, 0, &n_len_vec, &[]) }?;
+        unsafe { queue.enqueue_write_buffer(&mut n_len, CL_NON_BLOCKING, 0, &n_len_vec, &[]) }?;
     _n_len_write_event.wait()?;
 
     println!("开始执行kernel");
