@@ -7,13 +7,13 @@ uchar median(uchar a, uchar b, uchar c) {
 // 输入: 1~255 长度的 u8 数组
 // 输出: 255 长度的 u8 数组
 kernel void load_team(
-    global const uchar* all_team_bytes,
-    global const int* all_t_len,
+    global const uchar* g_team_bytes,
+    const int t_len,
     global const uchar* all_name_bytes,
     global const int* all_n_len,
     // 一个 svm 的 [u8; 256] * worker_count
     global uchar* all_val,
-    int worker_count
+    const int worker_count
 ) {
    int gid = get_global_id(0);
     if (gid >= worker_count) {
@@ -27,10 +27,9 @@ kernel void load_team(
         val[i] = i;
     }
     for (int i = 0; i < 256; i += 4) {
-        vstore4(vload4(0, &all_team_bytes[256 * gid + i]), i, team_bytes);
+        vstore4(vload4(0, &g_team_bytes[i]), i, team_bytes);
         vstore4(vload4(0, &all_name_bytes[256 * gid + i]), i, name_bytes);
     }
-    int t_len = all_t_len[gid];
     int n_len = all_n_len[gid];
 
     // 外面初始化好了
