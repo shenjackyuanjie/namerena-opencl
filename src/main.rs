@@ -62,7 +62,7 @@ fn main() -> anyhow::Result<()> {
         property |= CL_QUEUE_ON_DEVICE;
     }
     let queue = match CommandQueue::create_default_with_properties(
-        &context, property, worker_count as u32, // 写死试试, 看起来没问题
+        &context, property, 0
     ) {
         Ok(q) => q,
         Err(err) => {
