@@ -23,6 +23,7 @@ kernel void load_team(
     local uchar val[256];
     local uchar team_bytes[256];
     local uchar name_bytes[256];
+
     for (int i = 0; i < 256; i++) {
         val[i] = i;
     }
@@ -48,18 +49,20 @@ kernel void load_team(
         uchar s = 0;
         uchar k = 0;
         for (int i = 0; i < 256; i++) {
-            if (k != 0) {
-                s += name_bytes[k - 1];
-            }
+            // if (k != 0) {
+            //     s += name_bytes[k - 1];
+            // }
+            s += name_bytes[(k - 1) & (k != 0) * 0xFF];
             s += val[i];
             uchar tmp = val[i];
             val[i] = val[s];
             val[s] = tmp;
-            if (k == n_len) {
-                k = 0;
-            } else {
-                k++;
-            }
+            // if (k == n_len) {
+            //     k = 0;
+            // } else {
+            //     k++;
+            // }
+            k = (k == n_len) ? 0 : (k + 1);
         }
     }
 
