@@ -21,7 +21,7 @@ const KERNEL_NAME: &str = "load_team";
 const BLOCK_SIZE: usize = 256;
 
 // 运行次数
-const RUN_TIMES: usize = 10;
+const RUN_TIMES: usize = 100;
 
 fn run(
     context: &Context,

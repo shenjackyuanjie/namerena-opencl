@@ -24,6 +24,7 @@ kernel void load_team(
     local uchar team_bytes[256];
     local uchar name_bytes[256];
 
+    // 初始化val数组
     for (int i = 0; i < 256; i++) {
         val[i] = i;
     }
@@ -32,41 +33,55 @@ kernel void load_team(
         vstore4(vload4(0, &all_name_bytes[256 * gid + i]), i, name_bytes);
     }
 
-
     int n_len = all_n_len[gid];
 
-    // 外面初始化好了
+    // --- 优化点 1: 消除模运算和相关的分支 ---
+    // 第一个置换循环
     uchar s = 0;
-    for (int i = s = 0; i < 256; ++i) {
-        if (i % t_len) {
-            s += team_bytes[i % t_len - 1];
-        }
+    uchar team_idx = 0;
+    for (int i = 0; i < 256; ++i) {
         s += val[i];
+        if (team_idx != 0) {
+            s += team_bytes[team_idx - 1];
+        }
+
         uchar tmp = val[i];
         val[i] = val[s];
         val[s] = tmp;
+
+        team_idx++;
+        if (team_idx >= t_len) {
+            team_idx = 0;
+        }
     }
 
+    // 第二个置换循环 (重复两次)
     for (int _ = 0; _ < 2; _++) {
-        uchar s = 0;
+        uchar s_inner = 0;
         uchar k = 0;
         for (int i = 0; i < 256; i++) {
-            // if (k != 0) {
-            //     s += name_bytes[k - 1];
-            // }
-            s += (k != 0) ? name_bytes[k - 1] : 0;
-            s += val[i];
+            // 使用三元运算符避免分支
+            s_inner += (k != 0) ? name_bytes[k - 1] : 0;
+            s_inner += val[i];
+
             uchar tmp = val[i];
-            val[i] = val[s];
-            val[s] = tmp;
-            k = (k >= n_len) ? 0 : (k + 1); // 避免分支预测失败
+            val[i] = val[s_inner];
+            val[s_inner] = tmp;
+
+            // 使用三元运算符避免分支预测失败
+            k = (k >= n_len) ? 0 : (k + 1);
         }
     }
 
     local uchar val_2[256];
 
-    for (int i = 0; i < 256; i++) {
-        val_2[i] = val[i] * 181 + 160;
+    // --- 优化点 2: 向量化计算 (无溢出保护) ---
+    // 使用向量类型 (uchar4) 进行计算以提高吞吐量
+    // 用户确认不需要防止乘法溢出，直接在 uchar4 上进行计算
+    for (int i = 0; i < 64; i++) { // 256 bytes / 4 bytes/vector = 64 iterations
+        uchar4 temp_val = vload4(i, val);
+        temp_val = temp_val * (uchar)181 + (uchar)160;
+        vstore4(temp_val, i, val_2);
     }
 
     local uchar name_nase[40];
@@ -85,5 +100,5 @@ kernel void load_team(
     // 将结果从局部内存拷贝回全局内存
     // 这里的注释是原始代码保留的，用于确保编译器不会优化掉name_nase的计算
     // 如果需要最终结果，应该将相关数据写回 all_val
-    // all_val[256 * gid] = name_nase[0];
+    all_val[256 * gid] = name_nase[0];
 }
