@@ -49,7 +49,7 @@ fn run(
 
     println!("开始执行测试, worker_count 将从 1 到 {max_worker_count}");
 
-    for current_worker_count in 1..=max_worker_count {
+    for current_worker_count in 1000..=max_worker_count {
         println!("--> 正在测试 worker_count = {current_worker_count}");
 
         let worker_count_cl = current_worker_count as cl_int;
