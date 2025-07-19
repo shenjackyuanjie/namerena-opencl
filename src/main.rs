@@ -13,7 +13,6 @@ use opencl3::program::Program;
 use opencl3::svm::SvmVec;
 use opencl3::types::{cl_int, cl_uchar, CL_BLOCKING, CL_NON_BLOCKING};
 use std::ptr;
-use std::time::Duration;
 
 const PROGRAM_SOURCE: &str = include_str!("program.cl");
 
@@ -22,7 +21,7 @@ const KERNEL_NAME: &str = "load_team";
 const BLOCK_SIZE: usize = 256;
 
 // 运行次数
-const RUN_TIMES: usize = 100;
+const RUN_TIMES: usize = 1000;
 
 fn main() -> anyhow::Result<()> {
     // Find a usable device for this application
@@ -51,8 +50,8 @@ fn main() -> anyhow::Result<()> {
     };
     let device = Device::new(device_id);
 
-    let worker_count: cl_int = max_size as cl_int;
-    println!("设备最大队列长度: {max_size} real count: {worker_count}");
+    let max_worker_count = max_size;
+    println!("设备最大队列长度: {max_worker_count}");
 
     // Create a Context on an OpenCL device
     let context = Context::from_device(&device).expect("Context::from_device failed");
@@ -100,24 +99,9 @@ fn main() -> anyhow::Result<()> {
         }
     };
 
-    let team_raw = "x";
+    let team_raw = "1234567";
     let team_bytes = team_raw.as_bytes();
-    let name_raw_vec = vec!["x"; worker_count as usize];
-    let name_bytes_vec = name_raw_vec
-        .iter()
-        .map(|s| s.as_bytes())
-        .collect::<Vec<&[u8]>>();
     let t_len = team_bytes.len() as cl_int;
-    let n_len_vec = name_bytes_vec
-        .iter()
-        .map(|s| s.len() as cl_int)
-        .collect::<Vec<i32>>();
-
-    let work_count = name_raw_vec.len();
-
-    println!("开始准备buffer");
-
-    // Create OpenCL device buffers
     let mut team = unsafe {
         Buffer::<cl_uchar>::create(
             &context,
@@ -126,152 +110,112 @@ fn main() -> anyhow::Result<()> {
             ptr::null_mut(),
         )?
     };
-    let mut name = unsafe {
-        Buffer::<cl_uchar>::create(
-            &context,
-            CL_MEM_READ_ONLY,
-            BLOCK_SIZE * work_count,
-            ptr::null_mut(),
-        )?
-    };
-    let mut n_len = unsafe {
-        Buffer::<cl_int>::create(&context, CL_MEM_READ_ONLY, work_count, ptr::null_mut())?
-    };
-    let mut output = SvmVec::<cl_uchar>::allocate(&context, BLOCK_SIZE * work_count)?;
-    // 准备一下数据, 都给拼成一维数组
-    // 填充成 256 * len
-    let name_data_vec = {
-        let mut vec = Vec::new();
-        for data in name_bytes_vec {
-            let left_over = BLOCK_SIZE - data.len();
-            vec.extend_from_slice(data);
-            vec.extend_from_slice(&vec![0; left_over]);
-        }
-        vec
-    };
-
-    println!("开始写入buffer");
-
-    // 阻塞写
-    let _team_write_event =
+    let team_write_event =
         unsafe { queue.enqueue_write_buffer(&mut team, CL_NON_BLOCKING, 0, team_bytes, &[]) }?;
-    _team_write_event.wait()?;
-    let _name_write_event =
-        unsafe { queue.enqueue_write_buffer(&mut name, CL_NON_BLOCKING, 0, &name_data_vec, &[]) }?;
-    _name_write_event.wait()?;
-    let _n_len_write_event =
-        unsafe { queue.enqueue_write_buffer(&mut n_len, CL_NON_BLOCKING, 0, &n_len_vec, &[]) }?;
-    _n_len_write_event.wait()?;
+    team_write_event.wait()?;
 
-    println!("开始执行kernel，将运行 {} 次", RUN_TIMES);
+    // 存储每个worker count的平均速度
+    let mut results: Vec<(usize, f32)> = Vec::with_capacity(max_worker_count);
 
-    // 存储每次运行的时间（内部计时）
-    let mut kernel_times = Vec::with_capacity(RUN_TIMES);
-    // 存储每次运行的时间（外部计时）
-    let mut external_times = Vec::with_capacity(RUN_TIMES);
-    // 存储每次运行的速度
-    let mut speeds = Vec::with_capacity(RUN_TIMES);
+    println!("开始执行测试, worker_count 将从 1 到 {max_worker_count}");
 
+    for current_worker_count in 1..=max_worker_count {
+        println!("--> 正在测试 worker_count = {current_worker_count}");
 
-    for i in 0..RUN_TIMES {
-        println!("\n--------- 第 {} 次运行 ---------", i + 1);
+        let worker_count_cl = current_worker_count as cl_int;
+        let name_raw_vec: Vec<String> = (1..=current_worker_count).map(|i| i.to_string()).collect();
 
-        // 执行kernel
-        let kernel_event = unsafe {
-            ExecuteKernel::new(&kernel)
-                .set_arg(&team)
-                .set_arg(&t_len)
-                .set_arg(&name)
-                .set_arg(&n_len)
-                .set_arg_svm(output.as_mut_ptr())
-                .set_arg(&worker_count)
-                .set_global_work_size(worker_count as usize)
-                .enqueue_nd_range(&queue)?
+        let name_bytes_vec = name_raw_vec
+            .iter()
+            .map(|s| s.as_bytes())
+            .collect::<Vec<&[u8]>>();
+        let n_len_vec = name_bytes_vec
+            .iter()
+            .map(|s| s.len() as cl_int)
+            .collect::<Vec<i32>>();
+
+        // Create OpenCL device buffers
+        let mut name = unsafe {
+            Buffer::<cl_uchar>::create(
+                &context,
+                CL_MEM_READ_ONLY,
+                BLOCK_SIZE * current_worker_count,
+                ptr::null_mut(),
+            )?
+        };
+        let mut n_len = unsafe {
+            Buffer::<cl_int>::create(&context, CL_MEM_READ_ONLY, current_worker_count, ptr::null_mut())?
+        };
+        let mut output = SvmVec::<cl_uchar>::allocate(&context, BLOCK_SIZE * current_worker_count)?;
+
+        let name_data_vec = {
+            let mut vec = Vec::with_capacity(BLOCK_SIZE * current_worker_count);
+            for data in name_bytes_vec {
+                let left_over = BLOCK_SIZE - data.len();
+                vec.extend_from_slice(data);
+                vec.extend_from_slice(&vec![0; left_over]);
+            }
+            vec
         };
 
-        println!("等待kernel执行完成");
-        let start_tick = std::time::Instant::now();
-        kernel_event.wait()?;
-        let end_tick = std::time::Instant::now();
-        queue.finish()?;
+        let name_write_event =
+            unsafe { queue.enqueue_write_buffer(&mut name, CL_NON_BLOCKING, 0, &name_data_vec, &[]) }?;
+        let n_len_write_event =
+            unsafe { queue.enqueue_write_buffer(&mut n_len, CL_NON_BLOCKING, 0, &n_len_vec, &[]) }?;
+        name_write_event.wait()?;
+        n_len_write_event.wait()?;
 
-        let external_duration = end_tick - start_tick;
-        println!("外置计时: {external_duration:?}");
-        external_times.push(external_duration);
+        let mut speeds = Vec::with_capacity(RUN_TIMES);
 
-        if !output.is_fine_grained() {
-            unsafe { queue.enqueue_svm_map(CL_BLOCKING, CL_MAP_WRITE, &mut output, &[]) }?;
+        for _ in 0..RUN_TIMES {
+            let kernel_event = unsafe {
+                ExecuteKernel::new(&kernel)
+                    .set_arg(&team)
+                    .set_arg(&t_len)
+                    .set_arg(&name)
+                    .set_arg(&n_len)
+                    .set_arg_svm(output.as_mut_ptr())
+                    .set_arg(&worker_count_cl)
+                    .set_global_work_size(current_worker_count)
+                    .enqueue_nd_range(&queue)?
+            };
+
+            kernel_event.wait()?;
+            queue.finish()?;
+
+            if !output.is_fine_grained() {
+                unsafe { queue.enqueue_svm_map(CL_BLOCKING, CL_MAP_WRITE, &mut output, &[]) }?;
+            }
+
+            let start_time = kernel_event.profiling_command_start()?;
+            let end_time = kernel_event.profiling_command_end()?;
+            let duration = end_time - start_time;
+
+            let pre_sec = 1_000_000_000 as f32 / duration as f32;
+            let speed = pre_sec * current_worker_count as f32;
+            speeds.push(speed);
+
+            if !output.is_fine_grained() {
+                let unmap_event = unsafe { queue.enqueue_svm_unmap(&output, &[]) }?;
+                unmap_event.wait()?;
+            }
         }
 
-        let start_time = kernel_event.profiling_command_start()?;
-        let end_time = kernel_event.profiling_command_end()?;
-        let duration = end_time - start_time;
-        let time = std::time::Duration::from_nanos(duration as u64);
-        println!("kernel execution duration: {time:?}");
-        kernel_times.push(time);
-
-        let pre_sec = 1_000_000_000 as f32 / duration as f32;
-        let speed = pre_sec * worker_count as f32;
-        println!("kernel execution speed (pre/sec): {speed:?}");
-        speeds.push(speed);
-
-        if !output.is_fine_grained() {
-            let unmap_event = unsafe { queue.enqueue_svm_unmap(&output, &[]) }?;
-            unmap_event.wait()?;
-        }
+        let total_speed: f32 = speeds.iter().sum();
+        let avg_speed = total_speed / RUN_TIMES as f32;
+        results.push((current_worker_count, avg_speed));
     }
 
     // 计算并输出统计结果
     println!("\n=============== 统计结果 ===============");
+    println!("按 worker count 从小到大排序:");
+    println!("Worker Count\t平均速度 (pre/sec)");
 
-    // 计算内部计时平均值
-    let total_kernel_time: Duration = kernel_times.iter().sum();
-    let avg_kernel_time = total_kernel_time / RUN_TIMES as u32;
+    results.sort_by(|a, b| a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal));
 
-    // 计算外部计时平均值
-    let total_external_time: Duration = external_times.iter().sum();
-    let avg_external_time = total_external_time / RUN_TIMES as u32;
-
-    // 计算平均速度
-    let total_speed: f32 = speeds.iter().sum();
-    let avg_speed = total_speed / RUN_TIMES as f32;
-
-    println!("每次运行内部计时:");
-    for (i, time) in kernel_times.iter().enumerate() {
-        println!("  第 {} 次: {:?}", i + 1, time);
+    for (wc, speed) in results {
+        println!("{wc}\t\t{speed:.2}");
     }
-
-    println!("每次运行外部计时:");
-    for (i, time) in external_times.iter().enumerate() {
-        println!("  第 {} 次: {:?}", i + 1, time);
-    }
-
-    println!("每次运行速度 (pre/sec):");
-    for (i, speed) in speeds.iter().enumerate() {
-        println!("  第 {} 次: {:.2}", i + 1, speed);
-    }
-
-    println!("\n平均内部计时: {avg_kernel_time:?}");
-    println!("平均外部计时: {avg_external_time:?}");
-    println!("平均速度 (pre/sec): {avg_speed:.2}");
 
     Ok(())
 }
-
-/*
- *
- ❯ cargo run --release
-     Finished `release` profile [optimized] target(s) in 0.07s
-      Running `target\release\opencl-test.exe`
- 设备最大队列长度: 1024 real count: 1024
- 队列创建完成
- 程序构建成功
- 内核创建成功
- 开始准备buffer
- 开始写入buffer
- 开始执行kernel
- 等待kernel执行完成
- 外置计时: 502µs
- kernel execution duration: 274.24µs
- kernel execution speed (pre/sec): 3733955.8
- */
