@@ -13,12 +13,16 @@ use opencl3::program::Program;
 use opencl3::svm::SvmVec;
 use opencl3::types::{cl_int, cl_uchar, CL_BLOCKING, CL_NON_BLOCKING};
 use std::ptr;
+use std::time::Duration;
 
 const PROGRAM_SOURCE: &str = include_str!("program.cl");
 
 const KERNEL_NAME: &str = "load_team";
 
 const BLOCK_SIZE: usize = 256;
+
+// 运行次数
+const RUN_TIMES: usize = 10;
 
 fn main() -> anyhow::Result<()> {
     // Find a usable device for this application
@@ -80,8 +84,7 @@ fn main() -> anyhow::Result<()> {
         }
         Err(err) => {
             println!(
-                "OpenCL Program::create_and_build_from_source failed: {}",
-                err
+                "OpenCL Program::create_and_build_from_source failed: {err}"
             );
             panic!();
         }
@@ -92,7 +95,7 @@ fn main() -> anyhow::Result<()> {
             k
         }
         Err(err) => {
-            println!("OpenCL Kernel::create failed: {}", err);
+            println!("OpenCL Kernel::create failed: {err}");
             panic!();
         }
     };
@@ -160,49 +163,97 @@ fn main() -> anyhow::Result<()> {
         unsafe { queue.enqueue_write_buffer(&mut n_len, CL_NON_BLOCKING, 0, &n_len_vec, &[]) }?;
     _n_len_write_event.wait()?;
 
-    println!("开始执行kernel");
+    println!("开始执行kernel，将运行 {} 次", RUN_TIMES);
 
-    // println!("output: {:?} {}", output, output.len());
-    let kernel_event = unsafe {
-        ExecuteKernel::new(&kernel)
-            .set_arg(&team)
-            .set_arg(&t_len)
-            .set_arg(&name)
-            .set_arg(&n_len)
-            .set_arg_svm(output.as_mut_ptr())
-            .set_arg(&worker_count)
-            .set_global_work_size(worker_count as usize)
-            .enqueue_nd_range(&queue)?
-    };
+    // 存储每次运行的时间（内部计时）
+    let mut kernel_times = Vec::with_capacity(RUN_TIMES);
+    // 存储每次运行的时间（外部计时）
+    let mut external_times = Vec::with_capacity(RUN_TIMES);
+    // 存储每次运行的速度
+    let mut speeds = Vec::with_capacity(RUN_TIMES);
 
-    println!("等待kernel执行完成");
-    let start_tick = std::time::Instant::now();
-    kernel_event.wait()?;
-    let end_tick = std::time::Instant::now();
-    queue.finish()?;
 
-    println!("外置计时: {:?}", end_tick - start_tick);
+    for i in 0..RUN_TIMES {
+        println!("\n--------- 第 {} 次运行 ---------", i + 1);
 
-    if !output.is_fine_grained() {
-        unsafe { queue.enqueue_svm_map(CL_BLOCKING, CL_MAP_WRITE, &mut output, &[]) }?;
+        // 执行kernel
+        let kernel_event = unsafe {
+            ExecuteKernel::new(&kernel)
+                .set_arg(&team)
+                .set_arg(&t_len)
+                .set_arg(&name)
+                .set_arg(&n_len)
+                .set_arg_svm(output.as_mut_ptr())
+                .set_arg(&worker_count)
+                .set_global_work_size(worker_count as usize)
+                .enqueue_nd_range(&queue)?
+        };
+
+        println!("等待kernel执行完成");
+        let start_tick = std::time::Instant::now();
+        kernel_event.wait()?;
+        let end_tick = std::time::Instant::now();
+        queue.finish()?;
+
+        let external_duration = end_tick - start_tick;
+        println!("外置计时: {external_duration:?}");
+        external_times.push(external_duration);
+
+        if !output.is_fine_grained() {
+            unsafe { queue.enqueue_svm_map(CL_BLOCKING, CL_MAP_WRITE, &mut output, &[]) }?;
+        }
+
+        let start_time = kernel_event.profiling_command_start()?;
+        let end_time = kernel_event.profiling_command_end()?;
+        let duration = end_time - start_time;
+        let time = std::time::Duration::from_nanos(duration as u64);
+        println!("kernel execution duration: {time:?}");
+        kernel_times.push(time);
+
+        let pre_sec = 1_000_000_000 as f32 / duration as f32;
+        let speed = pre_sec * worker_count as f32;
+        println!("kernel execution speed (pre/sec): {speed:?}");
+        speeds.push(speed);
+
+        if !output.is_fine_grained() {
+            let unmap_event = unsafe { queue.enqueue_svm_unmap(&output, &[]) }?;
+            unmap_event.wait()?;
+        }
     }
 
-    let start_time = kernel_event.profiling_command_start()?;
-    let end_time = kernel_event.profiling_command_end()?;
-    let duration = end_time - start_time;
-    let time = std::time::Duration::from_nanos(duration as u64);
-    println!("kernel execution duration: {:?}", time);
-    let pre_sec = 1_000_000_000 as f32 / duration as f32;
-    println!(
-        "kernel execution speed (pre/sec): {:?}",
-        pre_sec * worker_count as f32
-    );
-    // println!("output: {:?} {}", output, output.len());
+    // 计算并输出统计结果
+    println!("\n=============== 统计结果 ===============");
 
-    if !output.is_fine_grained() {
-        let unmap_event = unsafe { queue.enqueue_svm_unmap(&output, &[]) }?;
-        unmap_event.wait()?;
+    // 计算内部计时平均值
+    let total_kernel_time: Duration = kernel_times.iter().sum();
+    let avg_kernel_time = total_kernel_time / RUN_TIMES as u32;
+
+    // 计算外部计时平均值
+    let total_external_time: Duration = external_times.iter().sum();
+    let avg_external_time = total_external_time / RUN_TIMES as u32;
+
+    // 计算平均速度
+    let total_speed: f32 = speeds.iter().sum();
+    let avg_speed = total_speed / RUN_TIMES as f32;
+
+    println!("每次运行内部计时:");
+    for (i, time) in kernel_times.iter().enumerate() {
+        println!("  第 {} 次: {:?}", i + 1, time);
     }
+
+    println!("每次运行外部计时:");
+    for (i, time) in external_times.iter().enumerate() {
+        println!("  第 {} 次: {:?}", i + 1, time);
+    }
+
+    println!("每次运行速度 (pre/sec):");
+    for (i, speed) in speeds.iter().enumerate() {
+        println!("  第 {} 次: {:.2}", i + 1, speed);
+    }
+
+    println!("\n平均内部计时: {avg_kernel_time:?}");
+    println!("平均外部计时: {avg_external_time:?}");
+    println!("平均速度 (pre/sec): {avg_speed:.2}");
 
     Ok(())
 }
