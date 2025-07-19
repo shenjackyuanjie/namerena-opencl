@@ -30,8 +30,7 @@ fn main() -> anyhow::Result<()> {
             Ok(size) => size.to_size(),
             Err(err) => {
                 println!(
-                    "警告: get_device_info failed: {}\n也许是你没有一张AMD显卡,让我们试试非AMD",
-                    err
+                    "警告: get_device_info failed: {err}\n也许是你没有一张AMD显卡,让我们试试非AMD"
                 );
                 match get_device_info(device_id, CL_DEVICE_MAX_WORK_GROUP_SIZE) {
                     Ok(size) => {
@@ -39,7 +38,7 @@ fn main() -> anyhow::Result<()> {
                         size.to_size()
                     }
                     Err(err) => {
-                        println!("错误: get_device_info failed: {}\n", err);
+                        println!("错误: get_device_info failed: {err}\n");
                         panic!();
                     }
                 }
@@ -49,7 +48,7 @@ fn main() -> anyhow::Result<()> {
     let device = Device::new(device_id);
 
     let worker_count: cl_int = max_size as cl_int;
-    println!("设备最大队列长度: {} real count: {}", max_size, worker_count);
+    println!("设备最大队列长度: {max_size} real count: {worker_count}");
 
     // Create a Context on an OpenCL device
     let context = Context::from_device(&device).expect("Context::from_device failed");
@@ -66,7 +65,7 @@ fn main() -> anyhow::Result<()> {
     ) {
         Ok(q) => q,
         Err(err) => {
-            println!("创建命令队列失败: {}, 属性: {}", err, property);
+            println!("创建命令队列失败: {err}, 属性: {property}");
             panic!();
         }
     };
