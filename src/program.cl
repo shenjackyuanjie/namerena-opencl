@@ -75,9 +75,6 @@ kernel void load_team(
 
     local uchar val_2[256];
 
-    // --- 优化点 2: 向量化计算 (无溢出保护) ---
-    // 使用向量类型 (uchar4) 进行计算以提高吞吐量
-    // 用户确认不需要防止乘法溢出，直接在 uchar4 上进行计算
     for (int i = 0; i < 64; i++) { // 256 bytes / 4 bytes/vector = 64 iterations
         uchar4 temp_val = vload4(i, val);
         temp_val = temp_val * (uchar)181 + (uchar)160;
@@ -88,8 +85,6 @@ kernel void load_team(
     local int b_counter;
     b_counter = 0;
 
-    // --- 优化点 3: 消除不必要的内层分支 (break) ---
-    // 将 b_counter 检查合并到循环条件中
     for (int i = 0; i < 256 && b_counter < 40; i++) {
         if (val_2[i] >= 89 && val_2[i] < 217) {
             name_nase[b_counter] = val_2[i] & 63;

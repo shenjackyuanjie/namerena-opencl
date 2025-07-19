@@ -4,8 +4,7 @@ use opencl3::command_queue::{
 };
 use opencl3::context::Context;
 use opencl3::device::{
-    get_all_devices, get_device_info, Device, CL_DEVICE_MAX_WORK_GROUP_SIZE,
-    CL_DEVICE_MAX_WORK_GROUP_SIZE_AMD, CL_DEVICE_TYPE_GPU,
+    get_all_devices, get_device_info, Device, CL_DEVICE_LOCAL_MEM_SIZE, CL_DEVICE_MAX_WORK_GROUP_SIZE, CL_DEVICE_MAX_WORK_GROUP_SIZE_AMD, CL_DEVICE_TYPE_GPU
 };
 use opencl3::kernel::{ExecuteKernel, Kernel};
 use opencl3::memory::{Buffer, CL_MAP_WRITE, CL_MEM_READ_ONLY};
@@ -47,13 +46,9 @@ fn run(
     // 存储每个worker count的平均速度
     let mut results: Vec<(usize, f32)> = Vec::with_capacity(max_worker_count);
 
-    println!("开始执行测试, worker_count 将从 1 到 {max_worker_count}");
 
-    for current_worker_count in 1000..=max_worker_count {
-        println!("--> 正在测试 worker_count = {current_worker_count}");
-
-        let worker_count_cl = current_worker_count as cl_int;
-        let name_raw_vec: Vec<String> = (1..=current_worker_count).map(|i| i.to_string()).collect();
+        let worker_count_cl = max_worker_count as cl_int;
+        let name_raw_vec: Vec<String> = (1..=max_worker_count).map(|i| i.to_string()).collect();
 
         let name_bytes_vec = name_raw_vec
             .iter()
@@ -69,17 +64,17 @@ fn run(
             Buffer::<cl_uchar>::create(
                 context,
                 CL_MEM_READ_ONLY,
-                BLOCK_SIZE * current_worker_count,
+                BLOCK_SIZE * max_worker_count,
                 ptr::null_mut(),
             )?
         };
         let mut n_len = unsafe {
-            Buffer::<cl_int>::create(context, CL_MEM_READ_ONLY, current_worker_count, ptr::null_mut())?
+            Buffer::<cl_int>::create(context, CL_MEM_READ_ONLY, max_worker_count, ptr::null_mut())?
         };
-        let mut output = SvmVec::<cl_uchar>::allocate(context, BLOCK_SIZE * current_worker_count)?;
+        let mut output = SvmVec::<cl_uchar>::allocate(context, BLOCK_SIZE * max_worker_count)?;
 
         let name_data_vec = {
-            let mut vec = Vec::with_capacity(BLOCK_SIZE * current_worker_count);
+            let mut vec = Vec::with_capacity(BLOCK_SIZE * max_worker_count);
             for data in name_bytes_vec {
                 let left_over = BLOCK_SIZE - data.len();
                 vec.extend_from_slice(data);
@@ -106,9 +101,11 @@ fn run(
                     .set_arg(&n_len)
                     .set_arg_svm(output.as_mut_ptr())
                     .set_arg(&worker_count_cl)
-                    .set_global_work_size(current_worker_count)
+                    .set_global_work_size(max_worker_count)
+                    .set_local_work_size(8)
                     .enqueue_nd_range(queue)?
             };
+
 
             kernel_event.wait()?;
             queue.finish()?;
@@ -122,7 +119,7 @@ fn run(
             let duration = end_time - start_time;
 
             let pre_sec = 1_000_000_000 as f32 / duration as f32;
-            let speed = pre_sec * current_worker_count as f32;
+            let speed = pre_sec * max_worker_count as f32;
             speeds.push(speed);
 
             if !output.is_fine_grained() {
@@ -133,19 +130,7 @@ fn run(
 
         let total_speed: f32 = speeds.iter().sum();
         let avg_speed = total_speed / RUN_TIMES as f32;
-        results.push((current_worker_count, avg_speed));
-    }
-
-    // 计算并输出统计结果
-    println!("\n=============== 统计结果 ===============");
-    println!("按 worker count 从小到大排序:");
-    println!("Worker Count\t平均速度 (pre/sec)");
-
-    results.sort_by(|a, b| a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal));
-
-    for (wc, speed) in results {
-        println!("{wc}\t\t{speed:.2}");
-    }
+        println!("worker_count: {max_worker_count}, avg_speed: {avg_speed}");
 
     Ok(())
 }
@@ -155,7 +140,7 @@ fn main() -> anyhow::Result<()> {
     let device_id = *get_all_devices(CL_DEVICE_TYPE_GPU)?
         .first()
         .expect("no device found in platform");
-    let max_size = {
+    let max_worker_count =
         match get_device_info(device_id, CL_DEVICE_MAX_WORK_GROUP_SIZE_AMD) {
             Ok(size) => size.to_size(),
             Err(err) => {
@@ -173,12 +158,13 @@ fn main() -> anyhow::Result<()> {
                     }
                 }
             }
-        }
-    };
+        };
+    let max_local_mem = get_device_info(device_id, CL_DEVICE_LOCAL_MEM_SIZE).expect("faild to get max local mem size").to_ulong();
+    println!("设备 local mem 大小: {max_local_mem}");
+    println!("设备最大队列长度: {max_worker_count}");
+
     let device = Device::new(device_id);
 
-    let max_worker_count = max_size;
-    println!("设备最大队列长度: {max_worker_count}");
 
     // Create a Context on an OpenCL device
     let context = Context::from_device(&device).expect("Context::from_device failed");
