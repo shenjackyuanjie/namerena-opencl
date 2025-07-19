@@ -21,7 +21,134 @@ const KERNEL_NAME: &str = "load_team";
 const BLOCK_SIZE: usize = 256;
 
 // 运行次数
-const RUN_TIMES: usize = 1000;
+const RUN_TIMES: usize = 10;
+
+fn run(
+    context: &Context,
+    queue: &CommandQueue,
+    kernel: &Kernel,
+    max_worker_count: usize,
+    team: String,
+) -> anyhow::Result<()> {
+    let team_bytes = team.as_bytes();
+    let t_len = team_bytes.len() as cl_int;
+    let mut team_buffer = unsafe {
+        Buffer::<cl_uchar>::create(
+            context,
+            CL_MEM_READ_ONLY,
+            BLOCK_SIZE,
+            ptr::null_mut(),
+        )?
+    };
+    let team_write_event =
+        unsafe { queue.enqueue_write_buffer(&mut team_buffer, CL_NON_BLOCKING, 0, team_bytes, &[]) }?;
+    team_write_event.wait()?;
+
+    // 存储每个worker count的平均速度
+    let mut results: Vec<(usize, f32)> = Vec::with_capacity(max_worker_count);
+
+    println!("开始执行测试, worker_count 将从 1 到 {max_worker_count}");
+
+    for current_worker_count in 1..=max_worker_count {
+        println!("--> 正在测试 worker_count = {current_worker_count}");
+
+        let worker_count_cl = current_worker_count as cl_int;
+        let name_raw_vec: Vec<String> = (1..=current_worker_count).map(|i| i.to_string()).collect();
+
+        let name_bytes_vec = name_raw_vec
+            .iter()
+            .map(|s| s.as_bytes())
+            .collect::<Vec<&[u8]>>();
+        let n_len_vec = name_bytes_vec
+            .iter()
+            .map(|s| s.len() as cl_int)
+            .collect::<Vec<i32>>();
+
+        // Create OpenCL device buffers
+        let mut name = unsafe {
+            Buffer::<cl_uchar>::create(
+                context,
+                CL_MEM_READ_ONLY,
+                BLOCK_SIZE * current_worker_count,
+                ptr::null_mut(),
+            )?
+        };
+        let mut n_len = unsafe {
+            Buffer::<cl_int>::create(context, CL_MEM_READ_ONLY, current_worker_count, ptr::null_mut())?
+        };
+        let mut output = SvmVec::<cl_uchar>::allocate(context, BLOCK_SIZE * current_worker_count)?;
+
+        let name_data_vec = {
+            let mut vec = Vec::with_capacity(BLOCK_SIZE * current_worker_count);
+            for data in name_bytes_vec {
+                let left_over = BLOCK_SIZE - data.len();
+                vec.extend_from_slice(data);
+                vec.extend_from_slice(&vec![0; left_over]);
+            }
+            vec
+        };
+
+        let name_write_event =
+            unsafe { queue.enqueue_write_buffer(&mut name, CL_NON_BLOCKING, 0, &name_data_vec, &[]) }?;
+        let n_len_write_event =
+            unsafe { queue.enqueue_write_buffer(&mut n_len, CL_NON_BLOCKING, 0, &n_len_vec, &[]) }?;
+        name_write_event.wait()?;
+        n_len_write_event.wait()?;
+
+        let mut speeds = Vec::with_capacity(RUN_TIMES);
+
+        for _ in 0..RUN_TIMES {
+            let kernel_event = unsafe {
+                ExecuteKernel::new(kernel)
+                    .set_arg(&team_buffer)
+                    .set_arg(&t_len)
+                    .set_arg(&name)
+                    .set_arg(&n_len)
+                    .set_arg_svm(output.as_mut_ptr())
+                    .set_arg(&worker_count_cl)
+                    .set_global_work_size(current_worker_count)
+                    .enqueue_nd_range(queue)?
+            };
+
+            kernel_event.wait()?;
+            queue.finish()?;
+
+            if !output.is_fine_grained() {
+                unsafe { queue.enqueue_svm_map(CL_BLOCKING, CL_MAP_WRITE, &mut output, &[]) }?;
+            }
+
+            let start_time = kernel_event.profiling_command_start()?;
+            let end_time = kernel_event.profiling_command_end()?;
+            let duration = end_time - start_time;
+
+            let pre_sec = 1_000_000_000 as f32 / duration as f32;
+            let speed = pre_sec * current_worker_count as f32;
+            speeds.push(speed);
+
+            if !output.is_fine_grained() {
+                let unmap_event = unsafe { queue.enqueue_svm_unmap(&output, &[]) }?;
+                unmap_event.wait()?;
+            }
+        }
+
+        let total_speed: f32 = speeds.iter().sum();
+        let avg_speed = total_speed / RUN_TIMES as f32;
+        results.push((current_worker_count, avg_speed));
+    }
+
+    // 计算并输出统计结果
+    println!("\n=============== 统计结果 ===============");
+    println!("按 worker count 从小到大排序:");
+    println!("Worker Count\t平均速度 (pre/sec)");
+
+    results.sort_by(|a, b| a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal));
+
+    for (wc, speed) in results {
+        println!("{wc}\t\t{speed:.2}");
+    }
+
+    Ok(())
+}
 
 fn main() -> anyhow::Result<()> {
     // Find a usable device for this application
@@ -99,123 +226,8 @@ fn main() -> anyhow::Result<()> {
         }
     };
 
-    let team_raw = "1234567";
-    let team_bytes = team_raw.as_bytes();
-    let t_len = team_bytes.len() as cl_int;
-    let mut team = unsafe {
-        Buffer::<cl_uchar>::create(
-            &context,
-            CL_MEM_READ_ONLY,
-            BLOCK_SIZE,
-            ptr::null_mut(),
-        )?
-    };
-    let team_write_event =
-        unsafe { queue.enqueue_write_buffer(&mut team, CL_NON_BLOCKING, 0, team_bytes, &[]) }?;
-    team_write_event.wait()?;
-
-    // 存储每个worker count的平均速度
-    let mut results: Vec<(usize, f32)> = Vec::with_capacity(max_worker_count);
-
-    println!("开始执行测试, worker_count 将从 1 到 {max_worker_count}");
-
-    for current_worker_count in 1..=max_worker_count {
-        println!("--> 正在测试 worker_count = {current_worker_count}");
-
-        let worker_count_cl = current_worker_count as cl_int;
-        let name_raw_vec: Vec<String> = (1..=current_worker_count).map(|i| i.to_string()).collect();
-
-        let name_bytes_vec = name_raw_vec
-            .iter()
-            .map(|s| s.as_bytes())
-            .collect::<Vec<&[u8]>>();
-        let n_len_vec = name_bytes_vec
-            .iter()
-            .map(|s| s.len() as cl_int)
-            .collect::<Vec<i32>>();
-
-        // Create OpenCL device buffers
-        let mut name = unsafe {
-            Buffer::<cl_uchar>::create(
-                &context,
-                CL_MEM_READ_ONLY,
-                BLOCK_SIZE * current_worker_count,
-                ptr::null_mut(),
-            )?
-        };
-        let mut n_len = unsafe {
-            Buffer::<cl_int>::create(&context, CL_MEM_READ_ONLY, current_worker_count, ptr::null_mut())?
-        };
-        let mut output = SvmVec::<cl_uchar>::allocate(&context, BLOCK_SIZE * current_worker_count)?;
-
-        let name_data_vec = {
-            let mut vec = Vec::with_capacity(BLOCK_SIZE * current_worker_count);
-            for data in name_bytes_vec {
-                let left_over = BLOCK_SIZE - data.len();
-                vec.extend_from_slice(data);
-                vec.extend_from_slice(&vec![0; left_over]);
-            }
-            vec
-        };
-
-        let name_write_event =
-            unsafe { queue.enqueue_write_buffer(&mut name, CL_NON_BLOCKING, 0, &name_data_vec, &[]) }?;
-        let n_len_write_event =
-            unsafe { queue.enqueue_write_buffer(&mut n_len, CL_NON_BLOCKING, 0, &n_len_vec, &[]) }?;
-        name_write_event.wait()?;
-        n_len_write_event.wait()?;
-
-        let mut speeds = Vec::with_capacity(RUN_TIMES);
-
-        for _ in 0..RUN_TIMES {
-            let kernel_event = unsafe {
-                ExecuteKernel::new(&kernel)
-                    .set_arg(&team)
-                    .set_arg(&t_len)
-                    .set_arg(&name)
-                    .set_arg(&n_len)
-                    .set_arg_svm(output.as_mut_ptr())
-                    .set_arg(&worker_count_cl)
-                    .set_global_work_size(current_worker_count)
-                    .enqueue_nd_range(&queue)?
-            };
-
-            kernel_event.wait()?;
-            queue.finish()?;
-
-            if !output.is_fine_grained() {
-                unsafe { queue.enqueue_svm_map(CL_BLOCKING, CL_MAP_WRITE, &mut output, &[]) }?;
-            }
-
-            let start_time = kernel_event.profiling_command_start()?;
-            let end_time = kernel_event.profiling_command_end()?;
-            let duration = end_time - start_time;
-
-            let pre_sec = 1_000_000_000 as f32 / duration as f32;
-            let speed = pre_sec * current_worker_count as f32;
-            speeds.push(speed);
-
-            if !output.is_fine_grained() {
-                let unmap_event = unsafe { queue.enqueue_svm_unmap(&output, &[]) }?;
-                unmap_event.wait()?;
-            }
-        }
-
-        let total_speed: f32 = speeds.iter().sum();
-        let avg_speed = total_speed / RUN_TIMES as f32;
-        results.push((current_worker_count, avg_speed));
-    }
-
-    // 计算并输出统计结果
-    println!("\n=============== 统计结果 ===============");
-    println!("按 worker count 从小到大排序:");
-    println!("Worker Count\t平均速度 (pre/sec)");
-
-    results.sort_by(|a, b| a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal));
-
-    for (wc, speed) in results {
-        println!("{wc}\t\t{speed:.2}");
-    }
+    let team_raw = "1234567".to_string();
+    run(&context, &queue, &kernel, max_worker_count, team_raw)?;
 
     Ok(())
 }
