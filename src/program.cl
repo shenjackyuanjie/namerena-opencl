@@ -33,31 +33,6 @@ kernel void load_team(
     }
 
 
-    // int base = 256 * gid;
-    // for (int i = 0; i < 256; i += 4) {
-    //     uchar4 team_data = vload4(i, g_team_bytes);
-    //     uchar4 name_data = vload4(base + i, all_name_bytes);
-    //     vstore4(team_data, i, team_bytes);
-    //     vstore4(name_data, i, name_bytes);
-    //     val[i] = i;
-    //     val[i+1] = i+1;
-    //     val[i+2] = i+2;
-    //     val[i+3] = i+3;
-    // }
-
-    // // 修正优化：分离val初始化和向量加载
-    // for (int i = 0; i < 256; i++) {
-    //     val[i] = i; // 保持连续写入模式
-    // }
-
-    // const int base = 256 * gid;
-    // for (int i = 0; i < 256; i += 4) {
-    //     const uchar4 team_data = vload4(i/4, g_team_bytes); // 修正索引计算
-    //     const uchar4 name_data = vload4((base + i)/4, all_name_bytes);
-    //     vstore4(team_data, i/4, team_bytes);
-    //     vstore4(name_data, i/4, name_bytes);
-    // }
-
     int n_len = all_n_len[gid];
 
     // 外面初始化好了
