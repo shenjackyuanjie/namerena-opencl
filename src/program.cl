@@ -1,4 +1,3 @@
-
 // 取中值
 uchar median(uchar a, uchar b, uchar c) {
     return max(min(a, b), min(max(a, b), c));
@@ -15,11 +14,12 @@ kernel void load_team(
     global uchar* all_val,
     const int worker_count
 ) {
-   int gid = get_global_id(0);
+    int gid = get_global_id(0);
     if (gid >= worker_count) {
         return;
     }
 
+    // 使用局部内存以加速重复访问
     local uchar val[256];
     local uchar team_bytes[256];
     local uchar name_bytes[256];
