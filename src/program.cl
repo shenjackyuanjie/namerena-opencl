@@ -72,21 +72,18 @@ kernel void load_team(
     local uchar name_nase[40];
     local int b_counter;
     b_counter = 0;
-    for (int i = 0; i < 256; i += 1) {
+
+    // --- 优化点 3: 消除不必要的内层分支 (break) ---
+    // 将 b_counter 检查合并到循环条件中
+    for (int i = 0; i < 256 && b_counter < 40; i++) {
         if (val_2[i] >= 89 && val_2[i] < 217) {
             name_nase[b_counter] = val_2[i] & 63;
             b_counter++;
-            if (b_counter >= 40) {
-                break;
-            }
         }
     }
 
     // 将结果从局部内存拷贝回全局内存
-
-    // for (int i = 0; i < 256; i += 4) {
-    //     vstore4(vload4(0, &val_2[i]), i, &all_val[256 * gid + i]);
-    // }
-    // 这里这么整一下, 防止他优化掉最后的这点东西
+    // 这里的注释是原始代码保留的，用于确保编译器不会优化掉name_nase的计算
+    // 如果需要最终结果，应该将相关数据写回 all_val
     // all_val[256 * gid] = name_nase[0];
 }
