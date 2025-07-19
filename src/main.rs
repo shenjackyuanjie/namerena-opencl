@@ -207,3 +207,21 @@ fn main() -> anyhow::Result<()> {
 
     Ok(())
 }
+
+/*
+ *
+ ❯ cargo run --release
+     Finished `release` profile [optimized] target(s) in 0.07s
+      Running `target\release\opencl-test.exe`
+ 设备最大队列长度: 1024 real count: 1024
+ 队列创建完成
+ 程序构建成功
+ 内核创建成功
+ 开始准备buffer
+ 开始写入buffer
+ 开始执行kernel
+ 等待kernel执行完成
+ 外置计时: 502µs
+ kernel execution duration: 274.24µs
+ kernel execution speed (pre/sec): 3733955.8
+ */

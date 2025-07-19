@@ -43,7 +43,7 @@ kernel void load_team(
         val[i] = val[s];
         val[s] = tmp;
     }
-    
+
     for (int _ = 0; _ < 2; _++) {
         uchar s = 0;
         uchar k = 0;
@@ -83,7 +83,7 @@ kernel void load_team(
     }
 
     // 将结果从局部内存拷贝回全局内存
-    
+
     // for (int i = 0; i < 256; i += 4) {
     //     vstore4(vload4(0, &val_2[i]), i, &all_val[256 * gid + i]);
     // }
