@@ -21,7 +21,7 @@ const KERNEL_NAME: &str = "load_team";
 const BLOCK_SIZE: usize = 256;
 
 // 运行次数
-const RUN_TIMES: usize = 1000;
+const RUN_TIMES: usize = 10000;
 
 fn run(
     context: &Context,
@@ -98,7 +98,7 @@ fn run(
                 .set_arg_svm(output.as_mut_ptr())
                 .set_arg(&worker_count_cl)
                 .set_global_work_size(max_worker_count)
-                .set_local_work_size(64)
+                // .set_local_work_size(128)
                 .enqueue_nd_range(queue)?
         };
 
@@ -113,8 +113,8 @@ fn run(
         let end_time = kernel_event.profiling_command_end()?;
         let duration = end_time - start_time;
 
-        let pre_sec = 1_000_000_000 as f32 / duration as f32;
-        let speed = pre_sec * max_worker_count as f32;
+        let pre_sec = 1_000_000_000_f64 / duration as f64;
+        let speed = pre_sec * max_worker_count as f64;
         speeds.push(speed);
 
         if !output.is_fine_grained() {
@@ -123,8 +123,8 @@ fn run(
         }
     }
 
-    let total_speed: f32 = speeds.iter().sum();
-    let avg_speed = total_speed / RUN_TIMES as f32;
+    let total_speed: f64 = speeds.iter().sum();
+    let avg_speed = total_speed / RUN_TIMES as f64;
     println!("worker_count: {max_worker_count}, avg_speed: {avg_speed}");
 
     Ok(())

@@ -25,17 +25,37 @@ kernel void load_team(
     local uchar name_bytes[256];
 
     // 初始化val数组
-    for (int i = 0; i < 256; i++) {
-        val[i] = i;
+    for (int i = 0; i < 64; i++) {
+        uchar4 values = (uchar4)(i*4, i*4+1, i*4+2, i*4+3);
+        vstore4(values, i, val);
     }
-    for (int i = 0; i < 256; i += 4) {
-        vstore4(vload4(0, &g_team_bytes[i]), i, team_bytes);
-        vstore4(vload4(0, &all_name_bytes[256 * gid + i]), i, name_bytes);
-    }
+    // for (int i = 0; i < 256; i += 4) {
+    //     vstore4(vload4(0, &g_team_bytes[i]), i, team_bytes);
+    //     vstore4(vload4(0, &all_name_bytes[256 * gid + i]), i, name_bytes);
+    // }
+    // 一次性加载更大的块到本地内存
+    // 使用异步预取提高内存访问效率
+    event_t team_event, name_event;
+
+    // 异步预取team_bytes
+    team_event = async_work_group_copy(
+        team_bytes,
+        g_team_bytes,
+        t_len > 256 ? 256 : t_len,
+        0);
+
+    // 异步预取name_bytes
+    name_event = async_work_group_copy(
+        name_bytes,
+        all_name_bytes + 256 * gid,
+        256,
+        0);
+
+    // 等待数据加载完成
+    wait_group_events(2, (event_t[]){team_event, name_event});
 
     int n_len = all_n_len[gid];
 
-    // --- 优化点 1: 消除模运算和相关的分支 ---
     // 第一个置换循环
     uchar s = 0;
     uchar team_idx = 0;
