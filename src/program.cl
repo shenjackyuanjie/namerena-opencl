@@ -119,12 +119,12 @@ kernel void load_team(
 }
 
 // 输入: u8[256]
-// 输出: 256 长度的 u8 数组
+// 输出: 40 长度的 u8 数组 (name_base)
 kernel void load_name(
     global const uchar* global_val,
     global const uchar* all_name_bytes,
     global const int* all_n_len,
-    // 一个 svm 的 [u8; 256] * worker_count
+    // 一个 svm 的 [u8; 40] * worker_count
     global uchar* all_val,
     const int worker_count
 ) {
